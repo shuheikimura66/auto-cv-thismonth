@@ -16,18 +16,16 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
 # --- 環境変数 (Secretsから取得) ---
-# ※実行環境に合わせて適宜設定してください
 USER_ID = os.environ.get("USER_ID", "your_id")
 PASSWORD = os.environ.get("USER_PASS", "your_pass")
 # GCP_JSONは文字列として読み込む想定
 json_creds = json.loads(os.environ.get("GCP_JSON", "{}")) 
 TARGET_URL = os.environ.get("TARGET_URL", "https://example.com/login") 
 
-# --- 設定（変更箇所） ---
-# URLから抽出したID
-SPREADSHEET_ID = "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48"
+# --- 設定 ---
+SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48")
 SHEET_NAME = "test今月_raw"
-PARTNER_NAME = "株式会社フルアウト"
+PARTNER_NAME = os.environ.get("PARTNER_NAME", "株式会社フルアウト")
 
 def get_google_service(service_name, version):
     """Google APIサービスを取得するヘルパー関数"""
@@ -94,12 +92,12 @@ def main():
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
-    # 以前のCSVが残っていると誤作動の元になるため削除推奨
+    # 以前のCSV削除
     for f in glob.glob(os.path.join(download_dir, "*.csv")):
         os.remove(f)
 
     options = Options()
-    options.add_argument('--headless') # 動作確認時はコメントアウトするとブラウザが見えます
+    options.add_argument('--headless') 
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--window-size=1920,1080')
@@ -125,49 +123,56 @@ def main():
         print(f"アクセス中: {TARGET_URL}")
         driver.get(auth_url)
         time.sleep(3)
-
+        
         # 画面リフレッシュ(念の為)
         driver.get(auth_url)
         time.sleep(5) 
 
         # --- 2. 「絞り込み検索」ボタンをクリック ---
-        print("検索メニューを開きます...")
+        # 修正: ID="searchFormOpen" を指定
+        print("「絞り込み検索」ボタンを押してメニューを開きます...")
         try:
-            filter_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[contains(text(), '絞り込み検索')]")))
+            filter_btn = wait.until(EC.element_to_be_clickable((By.ID, "searchFormOpen")))
+            
+            # スクロールしてクリック
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", filter_btn)
+            time.sleep(1)
             filter_btn.click()
-            time.sleep(2)
+            print("「絞り込み検索」ボタンをクリックしました")
+            time.sleep(1) # 開くのを待つ
         except Exception as e:
             print(f"絞り込み検索ボタンが見つかりません: {e}")
             pass
 
         # --- 3. 「今月」ボタンをクリック ---
+        # 修正: class="... current_month" を CSSセレクタで指定 (.current_month)
         print("「今月」ボタンを選択します...")
         try:
-            # ID="current_month" を指定してクリック
-            current_month_btn = wait.until(EC.element_to_be_clickable((By.ID, "current_month")))
+            current_month_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".current_month")))
             
-            # 画面内にスクロールしてからクリック
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", current_month_btn)
-            time.sleep(0.5)
+            time.sleep(1)
             current_month_btn.click()
             print("「今月」ボタンをクリックしました")
-            time.sleep(2)
+            time.sleep(3) # 日付入力欄への反映待ち
         except Exception as e:
             print(f"「今月」ボタンの操作エラー: {e}")
 
         # --- 4. パートナー（株式会社フルアウト）を選択 ---
         print(f"パートナー({PARTNER_NAME})を入力します...")
         try:
-            # 「パートナー」という文字の近くにある入力欄を探す
+            # 「パートナー」ラベルの近くにある入力欄を探す
             partner_label = driver.find_element(By.XPATH, "//div[contains(text(), 'パートナー')] | //label[contains(text(), 'パートナー')]")
             partner_target = partner_label.find_element(By.XPATH, "./following::input[contains(@placeholder, '選択')][1]")
             
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_target)
+            time.sleep(0.5)
             partner_target.click()
             time.sleep(1)
             
             active_elem = driver.switch_to.active_element
             active_elem.send_keys(PARTNER_NAME)
-            time.sleep(3) # 入力候補が出るのを待つ
+            time.sleep(3) # 候補が出るのを待つ
             active_elem.send_keys(Keys.ENTER)
             print("パートナーを選択しました")
             time.sleep(2)
@@ -180,17 +185,19 @@ def main():
         try:
             search_btns = driver.find_elements(By.XPATH, "//input[@value='検索'] | //button[contains(text(), '検索')]")
             target_search_btn = None
+            # 表示されているボタンを探す
             for btn in search_btns:
                 if btn.is_displayed():
                     target_search_btn = btn
+                    break # 最初に見つかったものを採用
             
             if target_search_btn:
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target_search_btn)
-                time.sleep(0.5)
+                time.sleep(1)
                 driver.execute_script("arguments[0].click();", target_search_btn)
                 print("検索ボタンをクリックしました")
             else:
-                # ボタンが見つからなければEnterキーで代用
+                print("検索ボタンが見つからないためEnterキーで代用します")
                 webdriver.ActionChains(driver).send_keys(Keys.ENTER).perform()
 
         except Exception as e:
@@ -204,6 +211,7 @@ def main():
         # --- 6. CSV生成ボタン ---
         print("CSV生成ボタンを押します...")
         try:
+            # inputタグのvalue="CSV生成" または buttonタグのテキスト
             csv_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@value='CSV生成' or contains(text(), 'CSV生成')]")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", csv_btn)
             time.sleep(1)
