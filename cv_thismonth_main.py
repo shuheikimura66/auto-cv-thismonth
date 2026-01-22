@@ -18,27 +18,25 @@ from webdriver_manager.chrome import ChromeDriverManager
 # --- 環境変数 (Secretsから取得) ---
 USER_ID = os.environ.get("USER_ID", "your_id")
 PASSWORD = os.environ.get("USER_PASS", "your_pass")
-# GCP_JSONは文字列として読み込む想定
 json_creds = json.loads(os.environ.get("GCP_JSON", "{}")) 
 TARGET_URL = os.environ.get("TARGET_URL", "https://example.com/login") 
 
 # --- 設定 ---
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48")
 SHEET_NAME = "test今月_raw"
-PARTNER_NAME = os.environ.get("PARTNER_NAME", "株式会社フルアウト")
+
+# 今回選択したいターゲット名（完全一致または部分一致用）
+TARGET_PARTNER_TEXT = "1:株式会社フルアウト"
 
 def get_google_service(service_name, version):
-    """Google APIサービスを取得するヘルパー関数"""
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
     creds = Credentials.from_service_account_info(json_creds, scopes=scopes)
     return build(service_name, version, credentials=creds)
 
 def update_google_sheet(csv_path):
-    """CSVの中身を読み込んでスプレッドシートに張り付ける関数"""
     print(f"スプレッドシートへの転記を開始: {SHEET_NAME}")
     service = get_google_service('sheets', 'v4')
 
-    # 1. CSVデータの読み込み (文字コード判定付き)
     csv_data = []
     try:
         with open(csv_path, 'r', encoding='utf-8') as f:
@@ -58,7 +56,6 @@ def update_google_sheet(csv_path):
         print("CSVデータが空のため転記をスキップします。")
         return
 
-    # 2. シートのクリア
     try:
         service.spreadsheets().values().clear(
             spreadsheetId=SPREADSHEET_ID,
@@ -68,10 +65,7 @@ def update_google_sheet(csv_path):
     except Exception as e:
         print(f"シートクリアエラー: {e}")
 
-    # 3. データの書き込み
-    body = {
-        'values': csv_data
-    }
+    body = {'values': csv_data}
     try:
         result = service.spreadsheets().values().update(
             spreadsheetId=SPREADSHEET_ID,
@@ -90,7 +84,6 @@ def main():
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
-    # 以前のCSV削除
     for f in glob.glob(os.path.join(download_dir, "*.csv")):
         os.remove(f)
 
@@ -121,13 +114,11 @@ def main():
         print(f"アクセス中: {TARGET_URL}")
         driver.get(auth_url)
         time.sleep(3)
-        
-        # 画面リフレッシュ(念の為)
         driver.get(auth_url)
         time.sleep(5) 
 
-        # --- 2. 「絞り込み検索」ボタンをクリック ---
-        print("「絞り込み検索」ボタンを押してメニューを開きます...")
+        # --- 2. 「絞り込み検索」ボタン ---
+        print("「絞り込み検索」ボタン操作...")
         try:
             filter_btn = wait.until(EC.element_to_be_clickable((By.ID, "searchFormOpen")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", filter_btn)
@@ -137,10 +128,9 @@ def main():
             time.sleep(1)
         except Exception as e:
             print(f"絞り込み検索ボタンが見つかりません: {e}")
-            pass
 
-        # --- 3. 「今月」ボタンをクリック ---
-        print("「今月」ボタンを選択します...")
+        # --- 3. 「今月」ボタン ---
+        print("「今月」ボタン操作...")
         try:
             current_month_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".current_month")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", current_month_btn)
@@ -149,59 +139,49 @@ def main():
             print("「今月」ボタンをクリックしました")
             time.sleep(3)
         except Exception as e:
-            print(f"「今月」ボタンの操作エラー: {e}")
+            print(f"「今月」ボタン操作エラー: {e}")
 
-        # --- 4. パートナー（株式会社フルアウト）を選択 ---
-        # 【修正】選択したい具体的な候補名を設定
-        target_selection_text = "1:株式会社フルアウト"
-        
-        print(f"パートナー({PARTNER_NAME})を入力し、候補「{target_selection_text}」を選択します...")
+        # --- 4. パートナー選択 (修正箇所) ---
+        print(f"パートナー選択: 入力欄をクリックして「{TARGET_PARTNER_TEXT}」を選びます...")
         try:
-            # 入力欄の特定
-            partner_label = driver.find_element(By.XPATH, "//div[contains(text(), 'パートナー')] | //label[contains(text(), 'パートナー')]")
-            partner_target = partner_label.find_element(By.XPATH, "./following::input[contains(@placeholder, '選択')][1]")
+            # (A) 「選択または検索ができます」というplaceholderを持つinputを探してクリック
+            input_xpath = "//input[@placeholder='選択または検索ができます']"
             
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_target)
-            time.sleep(0.5)
-            partner_target.click()
+            partner_input = wait.until(EC.element_to_be_clickable((By.XPATH, input_xpath)))
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_input)
             time.sleep(1)
             
-            # 入力（フィルタリング用）
-            active_elem = driver.switch_to.active_element
-            active_elem.send_keys(PARTNER_NAME)
-            time.sleep(2) # 候補が表示されるのを待つ
+            # クリックしてドロップダウンを開く
+            partner_input.click()
+            print("入力欄をクリックしました（ドロップダウン展開待ち）")
+            time.sleep(2) # リストが表示されるのを待つ
 
-            # 【修正】Enterキーではなく、画面に出現した特定の候補要素をクリックする
-            print(f"画面上の「{target_selection_text}」を探してクリックします...")
-            try:
-                # テキストを含み、かつ現在表示されている要素を探す (liタグやdivタグなどを想定)
-                xpath_query = f"//*[contains(text(), '{target_selection_text}')]"
-                candidates = driver.find_elements(By.XPATH, xpath_query)
-                
-                clicked = False
-                for candidate in candidates:
-                    if candidate.is_displayed():
-                        # クリック実行
-                        candidate.click()
-                        clicked = True
-                        print(f"候補「{target_selection_text}」をクリックしました")
-                        break
-                
-                if not clicked:
-                    print("該当する候補が表示されていないか、クリックできませんでした。Enterキーを試行します。")
-                    active_elem.send_keys(Keys.ENTER)
-                    
-            except Exception as click_err:
-                print(f"クリック処理中にエラー: {click_err}")
-                active_elem.send_keys(Keys.ENTER)
+            # (B) ドロップダウンリストから「1:株式会社フルアウト」を含む要素を探してクリック
+            #     ドロップダウンは画面上の別レイヤー(body直下など)に描画されることが多いため、全体から検索
+            option_xpath = f"//*[contains(text(), '{TARGET_PARTNER_TEXT}')]"
+            
+            candidates = driver.find_elements(By.XPATH, option_xpath)
+            target_option = None
+            
+            # 見つかった候補のうち、現在「表示されている(is_displayed)」ものを探す
+            for candidate in candidates:
+                if candidate.is_displayed():
+                    target_option = candidate
+                    break
+            
+            if target_option:
+                target_option.click()
+                print(f"選択肢「{TARGET_PARTNER_TEXT}」をクリックしました")
+            else:
+                print(f"警告: 選択肢「{TARGET_PARTNER_TEXT}」が見つからないか、表示されていません。")
 
             time.sleep(2)
 
         except Exception as e:
-            print(f"パートナー入力エラー: {e}")
+            print(f"パートナー選択エラー: {e}")
 
         # --- 5. 検索ボタン実行 ---
-        print("検索ボタンを探して押します...")
+        print("検索ボタン操作...")
         try:
             search_btns = driver.find_elements(By.XPATH, "//input[@value='検索'] | //button[contains(text(), '検索')]")
             target_search_btn = None
@@ -223,24 +203,21 @@ def main():
             print(f"検索ボタン操作エラー: {e}")
             webdriver.ActionChains(driver).send_keys(Keys.ENTER).perform()
         
-        # --- 検索結果の反映待ち ---
         print("検索結果を待機中(15秒)...")
         time.sleep(15)
 
         # --- 6. CSV生成ボタン ---
-        print("CSV生成ボタンを押します...")
+        print("CSV生成ボタン操作...")
         try:
             csv_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@value='CSV生成' or contains(text(), 'CSV生成')]")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", csv_btn)
             time.sleep(1)
             driver.execute_script("arguments[0].click();", csv_btn)
             print("CSV生成ボタンをクリックしました")
-            
         except Exception as e:
             print(f"CSVボタンエラー: {e}")
             return
         
-        # ダウンロード待ち
         print("ダウンロード待機中...")
         time.sleep(5)
         csv_file_path = None
@@ -256,8 +233,6 @@ def main():
             return
         
         print(f"ダウンロード成功: {csv_file_path}")
-
-        # --- 7. スプレッドシートへ転記 ---
         update_google_sheet(csv_file_path)
 
     except Exception as e:
