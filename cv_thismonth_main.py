@@ -25,7 +25,7 @@ TARGET_URL = os.environ.get("TARGET_URL", "https://example.com/login")
 # --- 設定 ---
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48")
 SHEET_NAME = "test今月_raw"
-PARTNER_NAME = os.environ.get("PARTNER_NAME", "1:株式会社フルアウト")
+PARTNER_NAME = os.environ.get("PARTNER_NAME", "株式会社フルアウト")
 
 def get_google_service(service_name, version):
     """Google APIサービスを取得するヘルパー関数"""
@@ -41,14 +41,12 @@ def update_google_sheet(csv_path):
     # 1. CSVデータの読み込み (文字コード判定付き)
     csv_data = []
     try:
-        # まずUTF-8で試行
         with open(csv_path, 'r', encoding='utf-8') as f:
             reader = csv.reader(f)
             csv_data = list(reader)
     except UnicodeDecodeError:
         print("UTF-8での読み込みに失敗しました。Shift_JIS(CP932)で再試行します。")
         try:
-            # 失敗したらShift_JIS(CP932)で試行
             with open(csv_path, 'r', encoding='cp932') as f:
                 reader = csv.reader(f)
                 csv_data = list(reader)
@@ -60,7 +58,7 @@ def update_google_sheet(csv_path):
         print("CSVデータが空のため転記をスキップします。")
         return
 
-    # 2. シートのクリア (古いデータを消す)
+    # 2. シートのクリア
     try:
         service.spreadsheets().values().clear(
             spreadsheetId=SPREADSHEET_ID,
@@ -129,39 +127,37 @@ def main():
         time.sleep(5) 
 
         # --- 2. 「絞り込み検索」ボタンをクリック ---
-        # 修正: ID="searchFormOpen" を指定
         print("「絞り込み検索」ボタンを押してメニューを開きます...")
         try:
             filter_btn = wait.until(EC.element_to_be_clickable((By.ID, "searchFormOpen")))
-            
-            # スクロールしてクリック
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", filter_btn)
             time.sleep(1)
             filter_btn.click()
             print("「絞り込み検索」ボタンをクリックしました")
-            time.sleep(1) # 開くのを待つ
+            time.sleep(1)
         except Exception as e:
             print(f"絞り込み検索ボタンが見つかりません: {e}")
             pass
 
         # --- 3. 「今月」ボタンをクリック ---
-        # 修正: class="... current_month" を CSSセレクタで指定 (.current_month)
         print("「今月」ボタンを選択します...")
         try:
             current_month_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".current_month")))
-            
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", current_month_btn)
             time.sleep(1)
             current_month_btn.click()
             print("「今月」ボタンをクリックしました")
-            time.sleep(3) # 日付入力欄への反映待ち
+            time.sleep(3)
         except Exception as e:
             print(f"「今月」ボタンの操作エラー: {e}")
 
         # --- 4. パートナー（株式会社フルアウト）を選択 ---
-        print(f"パートナー({PARTNER_NAME})を入力します...")
+        # 【修正】選択したい具体的な候補名を設定
+        target_selection_text = "1:株式会社フルアウト"
+        
+        print(f"パートナー({PARTNER_NAME})を入力し、候補「{target_selection_text}」を選択します...")
         try:
-            # 「パートナー」ラベルの近くにある入力欄を探す
+            # 入力欄の特定
             partner_label = driver.find_element(By.XPATH, "//div[contains(text(), 'パートナー')] | //label[contains(text(), 'パートナー')]")
             partner_target = partner_label.find_element(By.XPATH, "./following::input[contains(@placeholder, '選択')][1]")
             
@@ -170,11 +166,35 @@ def main():
             partner_target.click()
             time.sleep(1)
             
+            # 入力（フィルタリング用）
             active_elem = driver.switch_to.active_element
             active_elem.send_keys(PARTNER_NAME)
-            time.sleep(3) # 候補が出るのを待つ
-            active_elem.send_keys(Keys.ENTER)
-            print("パートナーを選択しました")
+            time.sleep(2) # 候補が表示されるのを待つ
+
+            # 【修正】Enterキーではなく、画面に出現した特定の候補要素をクリックする
+            print(f"画面上の「{target_selection_text}」を探してクリックします...")
+            try:
+                # テキストを含み、かつ現在表示されている要素を探す (liタグやdivタグなどを想定)
+                xpath_query = f"//*[contains(text(), '{target_selection_text}')]"
+                candidates = driver.find_elements(By.XPATH, xpath_query)
+                
+                clicked = False
+                for candidate in candidates:
+                    if candidate.is_displayed():
+                        # クリック実行
+                        candidate.click()
+                        clicked = True
+                        print(f"候補「{target_selection_text}」をクリックしました")
+                        break
+                
+                if not clicked:
+                    print("該当する候補が表示されていないか、クリックできませんでした。Enterキーを試行します。")
+                    active_elem.send_keys(Keys.ENTER)
+                    
+            except Exception as click_err:
+                print(f"クリック処理中にエラー: {click_err}")
+                active_elem.send_keys(Keys.ENTER)
+
             time.sleep(2)
 
         except Exception as e:
@@ -185,11 +205,10 @@ def main():
         try:
             search_btns = driver.find_elements(By.XPATH, "//input[@value='検索'] | //button[contains(text(), '検索')]")
             target_search_btn = None
-            # 表示されているボタンを探す
             for btn in search_btns:
                 if btn.is_displayed():
                     target_search_btn = btn
-                    break # 最初に見つかったものを採用
+                    break
             
             if target_search_btn:
                 driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target_search_btn)
@@ -211,7 +230,6 @@ def main():
         # --- 6. CSV生成ボタン ---
         print("CSV生成ボタンを押します...")
         try:
-            # inputタグのvalue="CSV生成" または buttonタグのテキスト
             csv_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@value='CSV生成' or contains(text(), 'CSV生成')]")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", csv_btn)
             time.sleep(1)
