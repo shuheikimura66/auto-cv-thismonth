@@ -25,9 +25,6 @@ TARGET_URL = os.environ.get("TARGET_URL", "https://example.com/login")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48")
 SHEET_NAME = "test今月_raw"
 
-# 今回選択したいターゲット名（完全一致または部分一致用）
-TARGET_PARTNER_TEXT = "1:株式会社フルアウト"
-
 def get_google_service(service_name, version):
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
     creds = Credentials.from_service_account_info(json_creds, scopes=scopes)
@@ -141,39 +138,24 @@ def main():
         except Exception as e:
             print(f"「今月」ボタン操作エラー: {e}")
 
-        # --- 4. パートナー選択 (修正箇所) ---
-        print(f"パートナー選択: 入力欄をクリックして「{TARGET_PARTNER_TEXT}」を選びます...")
+        # --- 4. パートナー選択 (修正版: クリック → Enter) ---
+        print("パートナー選択: 入力欄をクリックしてEnterキーを押します...")
         try:
-            # (A) 「選択または検索ができます」というplaceholderを持つinputを探してクリック
             input_xpath = "//input[@placeholder='選択または検索ができます']"
-            
             partner_input = wait.until(EC.element_to_be_clickable((By.XPATH, input_xpath)))
+            
+            # 入力欄までスクロールしてクリック
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_input)
             time.sleep(1)
-            
-            # クリックしてドロップダウンを開く
             partner_input.click()
-            print("入力欄をクリックしました（ドロップダウン展開待ち）")
-            time.sleep(2) # リストが表示されるのを待つ
-
-            # (B) ドロップダウンリストから「1:株式会社フルアウト」を含む要素を探してクリック
-            #     ドロップダウンは画面上の別レイヤー(body直下など)に描画されることが多いため、全体から検索
-            option_xpath = f"//*[contains(text(), '{TARGET_PARTNER_TEXT}')]"
+            print("入力欄をクリックしました")
             
-            candidates = driver.find_elements(By.XPATH, option_xpath)
-            target_option = None
+            # ドロップダウンが開くのを少し待つ
+            time.sleep(1.5)
             
-            # 見つかった候補のうち、現在「表示されている(is_displayed)」ものを探す
-            for candidate in candidates:
-                if candidate.is_displayed():
-                    target_option = candidate
-                    break
-            
-            if target_option:
-                target_option.click()
-                print(f"選択肢「{TARGET_PARTNER_TEXT}」をクリックしました")
-            else:
-                print(f"警告: 選択肢「{TARGET_PARTNER_TEXT}」が見つからないか、表示されていません。")
+            # フォーカスが当たっているはずなので、Enterキーを送信
+            driver.switch_to.active_element.send_keys(Keys.ENTER)
+            print("Enterキーを送信しました")
 
             time.sleep(2)
 
