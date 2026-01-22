@@ -15,7 +15,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-# --- 環境変数 (Secretsから取得) ---
+# --- 環境変数 ---
 USER_ID = os.environ.get("USER_ID", "your_id")
 PASSWORD = os.environ.get("USER_PASS", "your_pass")
 json_creds = json.loads(os.environ.get("GCP_JSON", "{}")) 
@@ -24,9 +24,6 @@ TARGET_URL = os.environ.get("TARGET_URL", "https://example.com/login")
 # --- 設定 ---
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48")
 SHEET_NAME = "test今月_raw"
-
-# 検索したいパートナー名
-TARGET_NAME = "1:株式会社フルアウト"
 
 def get_google_service(service_name, version):
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
@@ -78,7 +75,7 @@ def update_google_sheet(csv_path):
         print(f"書き込みエラー: {e}")
 
 def main():
-    print("=== Action Log取得処理開始(今月分・デバッグ撮影モード) ===")
+    print("=== Action Log取得処理開始(今月分・撮影モード) ===")
     
     download_dir = os.path.join(os.getcwd(), "downloads_action_month")
     if not os.path.exists(download_dir):
@@ -92,7 +89,7 @@ def main():
     options.add_argument('--headless') 
     options.add_argument('--no-sandbox')
     options.add_argument('--disable-dev-shm-usage')
-    options.add_argument('--window-size=1920,1080') # キャプチャ用に画面サイズを固定
+    options.add_argument('--window-size=1920,1080')
     
     prefs = {
         "download.default_directory": download_dir,
@@ -126,11 +123,7 @@ def main():
             time.sleep(1)
             filter_btn.click()
             time.sleep(1)
-            
-            # 【キャプチャ1】メニューが開いたか確認
-            driver.save_screenshot(os.path.join(download_dir, "debug_01_menu_opened.png"))
-            print("キャプチャ保存: debug_01_menu_opened.png")
-
+            driver.save_screenshot(os.path.join(download_dir, "debug_01_menu.png"))
         except Exception as e:
             print(f"絞り込み検索ボタンが見つかりません: {e}")
 
@@ -142,16 +135,12 @@ def main():
             time.sleep(1)
             current_month_btn.click()
             time.sleep(3)
-
-            # 【キャプチャ2】日付が変わったか確認
-            driver.save_screenshot(os.path.join(download_dir, "debug_02_month_selected.png"))
-            print("キャプチャ保存: debug_02_month_selected.png")
-
+            driver.save_screenshot(os.path.join(download_dir, "debug_02_month.png"))
         except Exception as e:
             print(f"「今月」ボタン操作エラー: {e}")
 
-        # --- 4. パートナー選択 (入力+Enter方式) ---
-        print(f"パートナー選択: 「{TARGET_NAME}」を入力してEnterを押します...")
+        # --- 4. パートナー選択 (修正版: クリック -> ↓ -> Enter) ---
+        print("パートナー選択: クリックして↓キーを押し、Enterで確定します...")
         try:
             input_xpath = "//input[@placeholder='選択または検索ができます']"
             partner_input = wait.until(EC.element_to_be_clickable((By.XPATH, input_xpath)))
@@ -159,25 +148,21 @@ def main():
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_input)
             time.sleep(1)
             partner_input.click()
-            time.sleep(1)
+            print("入力欄をクリックしました")
+            time.sleep(1.5) # ドロップダウンが開くのを待つ
 
-            # 文字を入力してリストを絞り込む
+            # 入力欄がアクティブな状態で、矢印キー「↓」を送る
             active_elem = driver.switch_to.active_element
-            active_elem.send_keys(TARGET_NAME)
-            time.sleep(2) # 候補表示待ち
+            active_elem.send_keys(Keys.DOWN)
+            print("↓キー(Down)を送信しました")
+            time.sleep(0.5)
 
-            # 【キャプチャ3】文字入力後、候補がどう表示されているか確認
-            driver.save_screenshot(os.path.join(download_dir, "debug_03_partner_input.png"))
-            print("キャプチャ保存: debug_03_partner_input.png")
-            
             # Enterで確定
             active_elem.send_keys(Keys.ENTER)
             print("Enterキーを送信しました")
             time.sleep(2)
-
-            # 【キャプチャ4】選択確定後、入力欄がどうなっているか確認
-            driver.save_screenshot(os.path.join(download_dir, "debug_04_partner_confirmed.png"))
-            print("キャプチャ保存: debug_04_partner_confirmed.png")
+            
+            driver.save_screenshot(os.path.join(download_dir, "debug_03_partner_selected.png"))
 
         except Exception as e:
             print(f"パートナー選択エラー: {e}")
@@ -206,10 +191,7 @@ def main():
         
         print("検索結果を待機中(15秒)...")
         time.sleep(15)
-
-        # 【キャプチャ5】検索結果の一覧を確認（フルアウトのみになっているか？）
-        driver.save_screenshot(os.path.join(download_dir, "debug_05_search_result.png"))
-        print("キャプチャ保存: debug_05_search_result.png")
+        driver.save_screenshot(os.path.join(download_dir, "debug_04_result.png"))
 
         # --- 6. CSV生成ボタン ---
         print("CSV生成ボタン操作...")
