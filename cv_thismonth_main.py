@@ -29,7 +29,7 @@ SHEET_NAME = "test今月_raw"
 PARTNER_NAME = "株式会社フルアウト"
 
 # ★ここに指定されたドライブフォルダIDを設定
-DRIVE_FOLDER_ID = "1hqyzehrzUGWsdV8VQSkWgE9YWoMyc6bs"
+DRIVE_FOLDER_ID = "1nz3AkeGWJl9AW0nNCTNlOj6Ogx-7dMaW"
 
 def get_google_service(service_name, version, scopes):
     """Google APIサービスを取得するヘルパー関数"""
