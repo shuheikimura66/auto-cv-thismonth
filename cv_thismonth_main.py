@@ -25,7 +25,7 @@ TARGET_URL = os.environ.get("TARGET_URL", "https://example.com/login")
 # --- 設定 ---
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48")
 SHEET_NAME = "test今月_raw"
-PARTNER_NAME = os.environ.get("PARTNER_NAME", "株式会社フルアウト")
+PARTNER_NAME = os.environ.get("PARTNER_NAME", "1:株式会社フルアウト")
 
 def get_google_service(service_name, version):
     """Google APIサービスを取得するヘルパー関数"""
