@@ -42,3 +42,9 @@ jobs:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           PARTNER_NAME: ${{ secrets.PARTNER_NAME }}
         run: python cv_thismonth_main.py
+        - name: Debug Screenshots Upload
+        if: always() # エラーが起きても必ず実行
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshots
+          path: downloads_action_month/*.png
