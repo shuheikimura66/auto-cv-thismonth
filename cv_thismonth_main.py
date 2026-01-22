@@ -24,6 +24,7 @@ TARGET_URL = os.environ.get("TARGET_URL", "https://example.com/login")
 # --- 設定 ---
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfbfk2a0rMLSbZBE48")
 SHEET_NAME = "test今月_raw"
+PARTNER_NAME = "株式会社フルアウト" # 検索するパートナー名
 
 def get_google_service(service_name, version):
     scopes = ['https://www.googleapis.com/auth/spreadsheets']
@@ -75,13 +76,13 @@ def update_google_sheet(csv_path):
         print(f"書き込みエラー: {e}")
 
 def main():
-    print("=== Action Log取得処理開始(今月分・デバッグ撮影モード) ===")
+    print("=== Action Log取得処理開始(今月分) ===")
     
     download_dir = os.path.join(os.getcwd(), "downloads_action_month")
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
-    # 以前のファイルを削除
+    # 以前のCSV削除
     for f in glob.glob(os.path.join(download_dir, "*")):
         os.remove(f)
 
@@ -112,64 +113,60 @@ def main():
         print(f"アクセス中: {TARGET_URL}")
         driver.get(auth_url)
         time.sleep(3)
+        
+        # 画面リフレッシュ
         driver.get(auth_url)
         time.sleep(5) 
 
         # --- 2. 「絞り込み検索」ボタン ---
-        print("「絞り込み検索」ボタン操作...")
+        print("検索メニューを開きます...")
         try:
             filter_btn = wait.until(EC.element_to_be_clickable((By.ID, "searchFormOpen")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", filter_btn)
             time.sleep(1)
             filter_btn.click()
-            time.sleep(1)
-            driver.save_screenshot(os.path.join(download_dir, "debug_01_menu.png"))
+            time.sleep(2)
         except Exception as e:
-            print(f"絞り込み検索ボタンが見つかりません: {e}")
+            print(f"絞り込み検索ボタン操作エラー: {e}")
 
-        # --- 3. 「今月」ボタン ---
-        print("「今月」ボタン操作...")
+        # --- 3. 「今月」ボタン (ここはこのスクリプト独自の動き) ---
+        print("「今月」ボタンを選択します...")
         try:
             current_month_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".current_month")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", current_month_btn)
             time.sleep(1)
             current_month_btn.click()
+            print("「今月」ボタンをクリックしました")
             time.sleep(3)
-            driver.save_screenshot(os.path.join(download_dir, "debug_02_month.png"))
         except Exception as e:
             print(f"「今月」ボタン操作エラー: {e}")
 
-        # --- 4. パートナー選択 (修正版: クリック -> 1秒待機 -> Enter) ---
-        print("パートナー選択: クリックして1秒待ち、Enterキーを押します...")
+        # --- 4. パートナー選択 (ここをご提示のコードと全く同じロジックに変更) ---
+        print(f"パートナー({PARTNER_NAME})を入力します...")
         try:
-            input_xpath = "//input[@placeholder='選択または検索ができます']"
-            partner_input = wait.until(EC.element_to_be_clickable((By.XPATH, input_xpath)))
+            # ラベルと入力欄を特定
+            partner_label = driver.find_element(By.XPATH, "//div[contains(text(), 'パートナー')] | //label[contains(text(), 'パートナー')]")
+            partner_target = partner_label.find_element(By.XPATH, "./following::input[contains(@placeholder, '選択')][1]")
             
-            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_input)
+            # 入力欄をクリック
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_target)
+            partner_target.click()
             time.sleep(1)
             
-            # 1. クリック
-            partner_input.click()
-            print("入力欄をクリックしました")
-            
-            # 2. 1秒待つ
-            time.sleep(1)
-            
-            # 3. Enterキーを押す
+            # 文字を入力してリストを絞り込み -> 3秒待機 -> Enter
             active_elem = driver.switch_to.active_element
+            active_elem.send_keys(PARTNER_NAME)
+            time.sleep(3) # 絞り込み待ち(重要)
             active_elem.send_keys(Keys.ENTER)
-            print("Enterキーを送信しました")
             
+            print("パートナーを選択しました")
             time.sleep(2)
-            
-            # 状況確認用キャプチャ
-            driver.save_screenshot(os.path.join(download_dir, "debug_03_partner_selected.png"))
 
         except Exception as e:
-            print(f"パートナー選択エラー: {e}")
+            print(f"パートナー入力エラー: {e}")
 
         # --- 5. 検索ボタン実行 ---
-        print("検索ボタン操作...")
+        print("検索ボタンを探して押します...")
         try:
             search_btns = driver.find_elements(By.XPATH, "//input[@value='検索'] | //button[contains(text(), '検索')]")
             target_search_btn = None
@@ -190,14 +187,15 @@ def main():
             print(f"検索ボタン操作エラー: {e}")
             webdriver.ActionChains(driver).send_keys(Keys.ENTER).perform()
         
+        # --- 検索結果の反映待ち ---
         print("検索結果を待機中(15秒)...")
         time.sleep(15)
-        
-        # 検索結果確認用キャプチャ
-        driver.save_screenshot(os.path.join(download_dir, "debug_04_result.png"))
+
+        # キャプチャ保存（念のためデバッグ用に残しておきます）
+        driver.save_screenshot(os.path.join(download_dir, "search_result_check.png"))
 
         # --- 6. CSV生成ボタン ---
-        print("CSV生成ボタン操作...")
+        print("CSV生成ボタンを押します...")
         try:
             csv_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@value='CSV生成' or contains(text(), 'CSV生成')]")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", csv_btn)
@@ -208,6 +206,7 @@ def main():
             print(f"CSVボタンエラー: {e}")
             return
         
+        # ダウンロード待ち
         print("ダウンロード待機中...")
         time.sleep(5)
         csv_file_path = None
@@ -223,6 +222,8 @@ def main():
             return
         
         print(f"ダウンロード成功: {csv_file_path}")
+
+        # --- 7. スプレッドシートへ転記 ---
         update_google_sheet(csv_file_path)
 
     except Exception as e:
