@@ -15,7 +15,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 
-# --- 環境変数 ---
+# --- 環境変数 (Secretsから取得) ---
 USER_ID = os.environ.get("USER_ID", "your_id")
 PASSWORD = os.environ.get("USER_PASS", "your_pass")
 json_creds = json.loads(os.environ.get("GCP_JSON", "{}")) 
@@ -75,13 +75,13 @@ def update_google_sheet(csv_path):
         print(f"書き込みエラー: {e}")
 
 def main():
-    print("=== Action Log取得処理開始(今月分・撮影モード) ===")
+    print("=== Action Log取得処理開始(今月分・デバッグ撮影モード) ===")
     
     download_dir = os.path.join(os.getcwd(), "downloads_action_month")
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
-    # 以前のCSVと画像を削除
+    # 以前のファイルを削除
     for f in glob.glob(os.path.join(download_dir, "*")):
         os.remove(f)
 
@@ -139,29 +139,30 @@ def main():
         except Exception as e:
             print(f"「今月」ボタン操作エラー: {e}")
 
-        # --- 4. パートナー選択 (修正版: クリック -> ↓ -> Enter) ---
-        print("パートナー選択: クリックして↓キーを押し、Enterで確定します...")
+        # --- 4. パートナー選択 (修正版: クリック -> 1秒待機 -> Enter) ---
+        print("パートナー選択: クリックして1秒待ち、Enterキーを押します...")
         try:
             input_xpath = "//input[@placeholder='選択または検索ができます']"
             partner_input = wait.until(EC.element_to_be_clickable((By.XPATH, input_xpath)))
             
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_input)
             time.sleep(1)
+            
+            # 1. クリック
             partner_input.click()
             print("入力欄をクリックしました")
-            time.sleep(1.5) # ドロップダウンが開くのを待つ
-
-            # 入力欄がアクティブな状態で、矢印キー「↓」を送る
+            
+            # 2. 1秒待つ
+            time.sleep(1)
+            
+            # 3. Enterキーを押す
             active_elem = driver.switch_to.active_element
-            active_elem.send_keys(Keys.DOWN)
-            print("↓キー(Down)を送信しました")
-            time.sleep(0.5)
-
-            # Enterで確定
             active_elem.send_keys(Keys.ENTER)
             print("Enterキーを送信しました")
+            
             time.sleep(2)
             
+            # 状況確認用キャプチャ
             driver.save_screenshot(os.path.join(download_dir, "debug_03_partner_selected.png"))
 
         except Exception as e:
@@ -191,6 +192,8 @@ def main():
         
         print("検索結果を待機中(15秒)...")
         time.sleep(15)
+        
+        # 検索結果確認用キャプチャ
         driver.save_screenshot(os.path.join(download_dir, "debug_04_result.png"))
 
         # --- 6. CSV生成ボタン ---
