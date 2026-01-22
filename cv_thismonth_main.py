@@ -6,7 +6,6 @@ import csv
 from urllib.parse import quote
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -28,46 +27,17 @@ SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID", "1H2TiCraNjMNoj3547ZB78nQqrdfb
 SHEET_NAME = "test今月_raw"
 PARTNER_NAME = "株式会社フルアウト"
 
-# Google DriveフォルダID
-DRIVE_FOLDER_ID = "1hqyzehrzUGWsdV8VQSkWgE9YWoMyc6bs"
-
 def get_google_service(service_name, version, scopes):
+    """Google APIサービスを取得するヘルパー関数"""
     creds = Credentials.from_service_account_info(json_creds, scopes=scopes)
     return build(service_name, version, credentials=creds)
 
-def upload_to_drive(file_path):
-    print(f"Google Driveへアップロード中: {os.path.basename(file_path)}")
-    try:
-        service = get_google_service('drive', 'v3', ['https://www.googleapis.com/auth/drive'])
-        
-        file_metadata = {
-            'name': os.path.basename(file_path),
-            'parents': [DRIVE_FOLDER_ID]
-        }
-        
-        mimetype = 'application/octet-stream'
-        if file_path.endswith('.csv'):
-            mimetype = 'text/csv'
-        elif file_path.endswith('.png'):
-            mimetype = 'image/png'
-
-        media = MediaFileUpload(file_path, mimetype=mimetype)
-        
-        service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id',
-            supportsAllDrives=True
-        ).execute()
-        print("アップロード完了")
-        
-    except Exception as e:
-        print(f"ドライブアップロードエラー: {e}")
-
 def update_google_sheet(csv_path):
+    """CSVの中身を読み込んでスプレッドシートに張り付ける関数"""
     print(f"スプレッドシートへの転記を開始: {SHEET_NAME}")
     service = get_google_service('sheets', 'v4', ['https://www.googleapis.com/auth/spreadsheets'])
 
+    # 1. CSVデータの読み込み (文字コード判定付き)
     csv_data = []
     try:
         with open(csv_path, 'r', encoding='utf-8') as f:
@@ -87,37 +57,39 @@ def update_google_sheet(csv_path):
         print("CSVデータが空のため転記をスキップします。")
         return
 
+    # 2. シートのクリア (古いデータを消す)
     try:
-        service.spreadsheets().values().clear(spreadsheetId=SPREADSHEET_ID, range=SHEET_NAME).execute()
+        service.spreadsheets().values().clear(
+            spreadsheetId=SPREADSHEET_ID,
+            range=SHEET_NAME
+        ).execute()
+        print("既存データをクリアしました。")
     except Exception as e:
         print(f"シートクリアエラー: {e}")
 
-    body = {'values': csv_data}
+    # 3. データの書き込み
+    body = {
+        'values': csv_data
+    }
     try:
-        service.spreadsheets().values().update(
+        result = service.spreadsheets().values().update(
             spreadsheetId=SPREADSHEET_ID,
             range=f"{SHEET_NAME}!A1",
             valueInputOption='USER_ENTERED',
             body=body
         ).execute()
-        print("スプレッドシート更新完了")
+        print(f"スプレッドシート更新完了: {result.get('updatedCells')} セル更新")
     except Exception as e:
         print(f"書き込みエラー: {e}")
 
-def highlight(driver, element):
-    """操作対象を赤枠・赤背景にする"""
-    driver.execute_script(
-        "arguments[0].setAttribute('style', 'border: 5px solid red; background-color: rgba(255, 0, 0, 0.5);');", 
-        element
-    )
-
 def main():
-    print("=== Action Log取得処理開始 ===")
+    print("=== Action Log取得処理開始(今月分) ===")
     
     download_dir = os.path.join(os.getcwd(), "downloads_action_month")
     if not os.path.exists(download_dir):
         os.makedirs(download_dir)
 
+    # 以前のCSV削除
     for f in glob.glob(os.path.join(download_dir, "*")):
         os.remove(f)
 
@@ -148,59 +120,57 @@ def main():
         print(f"アクセス中: {TARGET_URL}")
         driver.get(auth_url)
         time.sleep(3)
+        
+        # 画面リフレッシュ(念の為)
         driver.get(auth_url)
         time.sleep(5) 
 
-        # --- 2. 「絞り込み検索」ボタン ---
-        print("検索メニューを開きます...")
+        # --- 2. 「絞り込み検索」ボタンをクリック ---
+        print("「絞り込み検索」ボタンを押してメニューを開きます...")
         try:
             filter_btn = wait.until(EC.element_to_be_clickable((By.ID, "searchFormOpen")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", filter_btn)
             time.sleep(1)
-            
-            highlight(driver, filter_btn)
-            driver.save_screenshot(os.path.join(download_dir, "01_filter_menu.png"))
-            
             filter_btn.click()
-            time.sleep(2)
+            print("「絞り込み検索」ボタンをクリックしました")
+            time.sleep(2) # 開くのを待つ
         except Exception as e:
-            print(f"絞り込み検索ボタン操作エラー: {e}")
+            print(f"絞り込み検索ボタンが見つかりません: {e}")
+            pass
 
-        # --- 3. 「今月」ボタン ---
+        # --- 3. 「今月」ボタンをクリック ---
         print("「今月」ボタンを選択します...")
         try:
             current_month_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".current_month")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", current_month_btn)
             time.sleep(1)
-            
-            highlight(driver, current_month_btn)
-            driver.save_screenshot(os.path.join(download_dir, "02_month_btn.png"))
-            
             current_month_btn.click()
-            time.sleep(3)
+            print("「今月」ボタンをクリックしました")
+            time.sleep(3) # 日付入力欄への反映待ち
         except Exception as e:
-            print(f"「今月」ボタン操作エラー: {e}")
+            print(f"「今月」ボタンの操作エラー: {e}")
 
-        # --- 4. パートナー選択 ---
+        # --- 4. パートナー（株式会社フルアウト）を選択 ---
         print(f"パートナー({PARTNER_NAME})を入力します...")
         try:
+            # 「パートナー」ラベルの近くにある入力欄を探す
             partner_label = driver.find_element(By.XPATH, "//div[contains(text(), 'パートナー')] | //label[contains(text(), 'パートナー')]")
             partner_target = partner_label.find_element(By.XPATH, "./following::input[contains(@placeholder, '選択')][1]")
             
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", partner_target)
             
-            highlight(driver, partner_target)
-            driver.save_screenshot(os.path.join(download_dir, "03_partner_input_target.png"))
-            
+            # 入力欄をクリック
             partner_target.click()
             time.sleep(1)
             
+            # 文字を入力
             active_elem = driver.switch_to.active_element
             active_elem.send_keys(PARTNER_NAME)
-            time.sleep(3) # 候補待ち
             
-            driver.save_screenshot(os.path.join(download_dir, "04_partner_typed.png"))
+            # 【重要】候補が出るのをしっかり待つ
+            time.sleep(3)
             
+            # Enterで確定
             active_elem.send_keys(Keys.ENTER)
             print("パートナーを選択しました")
             time.sleep(2)
@@ -208,51 +178,43 @@ def main():
         except Exception as e:
             print(f"パートナー入力エラー: {e}")
 
-        # --- 5. 検索ボタン実行 (修正箇所) ---
-        print("正しい検索ボタン(searchFormSubmit)を探して押します...")
+        # --- 5. 検索ボタン実行 ---
+        print("検索ボタンを探して押します...")
         try:
-            # 指定された class="searchFormSubmit" かつ name="search" を持つボタンを特定
-            # inputタグまたはbuttonタグの可能性を考慮
+            # name="search" かつ classに"searchFormSubmit"を含むボタンを厳密に指定
             search_selector = "input.searchFormSubmit[name='search'], button.searchFormSubmit[name='search']"
-            
             target_search_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, search_selector)))
             
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", target_search_btn)
             time.sleep(1)
             
-            # ★正しく選択されているか確認するためのハイライト
-            highlight(driver, target_search_btn)
-            driver.save_screenshot(os.path.join(download_dir, "05_search_btn_target.png"))
-            
-            # クリック実行
             target_search_btn.click()
             print("検索ボタンをクリックしました")
 
         except Exception as e:
             print(f"検索ボタン操作エラー: {e}")
-            # 万が一見つからない場合はEnterで試行
+            # 万が一見つからない場合はEnterキーで代用
             webdriver.ActionChains(driver).send_keys(Keys.ENTER).perform()
         
+        # --- 検索結果の反映待ち ---
         print("検索結果を待機中(15秒)...")
         time.sleep(15)
-        
-        driver.save_screenshot(os.path.join(download_dir, "06_search_result.png"))
 
         # --- 6. CSV生成ボタン ---
-        print("CSV生成ボタン操作...")
+        print("CSV生成ボタンを押します...")
         try:
+            # inputタグのvalue="CSV生成" または buttonタグのテキスト
             csv_btn = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[@value='CSV生成' or contains(text(), 'CSV生成')]")))
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", csv_btn)
             time.sleep(1)
-            
-            highlight(driver, csv_btn)
-            driver.save_screenshot(os.path.join(download_dir, "07_csv_btn.png"))
-            
             driver.execute_script("arguments[0].click();", csv_btn)
+            print("CSV生成ボタンをクリックしました")
             
         except Exception as e:
             print(f"CSVボタンエラー: {e}")
+            return
         
+        # ダウンロード待ち
         print("ダウンロード待機中...")
         time.sleep(5)
         csv_file_path = None
@@ -263,28 +225,19 @@ def main():
                 break
             time.sleep(2)
             
-        if csv_file_path:
-            print(f"ダウンロード成功: {csv_file_path}")
-            update_google_sheet(csv_file_path)
-        else:
+        if not csv_file_path:
             print("【エラー】CSVファイルが見つかりません。")
+            return
+        
+        print(f"ダウンロード成功: {csv_file_path}")
 
-        # --- 8. 全ファイルをGoogle Driveへアップロード ---
-        print("=== Google Driveへの保存処理 ===")
-        all_files = glob.glob(os.path.join(download_dir, "*"))
-        for file_path in all_files:
-            upload_to_drive(file_path)
+        # --- 7. スプレッドシートへ転記 ---
+        update_google_sheet(csv_file_path)
 
     except Exception as e:
         print(f"【エラー発生】: {e}")
         import traceback
         traceback.print_exc()
-        try:
-            all_files = glob.glob(os.path.join(download_dir, "*"))
-            for file_path in all_files:
-                upload_to_drive(file_path)
-        except:
-            pass
         
     finally:
         driver.quit()
