@@ -8,6 +8,11 @@ on:
   # 手動実行のみ可能にする
   workflow_dispatch:
 
+# ▼ 追加: 同じワークフローが重複して実行されないようにする設定
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   run-cv-scraper:
     runs-on: ubuntu-latest
@@ -42,4 +47,3 @@ jobs:
           SPREADSHEET_ID: ${{ secrets.SPREADSHEET_ID }}
           PARTNER_NAME: ${{ secrets.PARTNER_NAME }}
         run: python cv_thismonth_main.py
-
